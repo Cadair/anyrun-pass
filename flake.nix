@@ -23,8 +23,12 @@
         strictDeps = true;
         copyLibs = true;
         buildInputs = with pkgs; [ nettle openssl ];
-        nativeBuildInputs = with pkgs; [ pkg-config ];
-
+        nativeBuildInputs = with pkgs; [
+          pkg-config
+          llvmPackages.clang
+          llvmPackages.libclang
+        ];
+        LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
         CARGO_BUILD_INCREMENTAL = "false";
         RUST_BACKTRACE = "full";
       };
@@ -35,10 +39,11 @@
       devShells.default = pkgs.mkShell {
         packages = with pkgs; [ rustc cargo anyrun ];
         shellHook = ''
-          echo "Welcome to the Rust dev shell!"
+          echo "Welcome to the anyrun-pass dev shell!"
           export ANYRUN_PASS_LIB="${anyrun-pass}/lib/libanyrun_pass.so"
           echo "Library path: $ANYRUN_PASS_LIB"
           alias anyrun-pass="anyrun --plugins $ANYRUN_PASS_LIB"
+          echo "The anyrun-pass alias will run anyrun with the plugin"
         '';
       };
     };
