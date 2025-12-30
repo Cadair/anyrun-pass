@@ -25,10 +25,10 @@
         buildInputs = with pkgs; [ nettle openssl ];
         nativeBuildInputs = with pkgs; [
           pkg-config
-          llvmPackages.clang
-          llvmPackages.libclang
+          # llvmPackages.clang
+          # llvmPackages.libclang
         ];
-        LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+        # LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
         CARGO_BUILD_INCREMENTAL = "false";
         RUST_BACKTRACE = "full";
       };

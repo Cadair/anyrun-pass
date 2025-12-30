@@ -7,11 +7,8 @@ use serde::Deserialize;
 use std::env::var;
 use std::fs;
 use std::path::{Path, PathBuf};
-// use sequoia_openpgp as openpgp;
-// use openpgp::parse::Parse;
-// use openpgp::policy::StandardPolicy;
-// use openpgp::serialize::stream::Decryptor;
-// use std::io::{self, Read};
+use std::process::Command;
+use std::io::Error;
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -31,7 +28,7 @@ impl Default for Config {
 }
 
 struct State {
-    store_path: PathBuf,
+    pass_files: Vec<String>,
     config: Config,
 }
 
@@ -53,8 +50,27 @@ fn init(config_dir: RString) -> State {
     let mut store_path = PathBuf::new();
     store_path.push(&var("HOME").unwrap());
     store_path.push(".password-store");
+    let mut file_glob_pattern = store_path.to_path_buf();
+    file_glob_pattern.push("**");
+    file_glob_pattern.push("*.gpg");
+    let paths = glob(&file_glob_pattern.to_string_lossy()).unwrap();
 
-    State { store_path, config }
+    // Now we filter the results A bit and unwrap them
+    let mut pass_files: Vec<String> = Vec::new();
+    for entry in paths {
+        match entry {
+            Ok(path) => {
+                // Ignore any git files
+                if path.starts_with(Path::join(&store_path, ".git")) {
+                    continue;
+                }
+                let relative_path = path.strip_prefix(&store_path).unwrap();
+                pass_files.push(String::from(relative_path.to_string_lossy()));
+            }
+            Err(e) => println!("{:?}", e),
+        }
+    }
+    State { pass_files, config }
 }
 
 #[info]
@@ -71,39 +87,20 @@ fn get_matches(input: RString, state: &mut State) -> RVec<Match> {
         return RVec::new();
     }
 
-    let mut file_glob_pattern = state.store_path.to_path_buf();
-    file_glob_pattern.push("**");
-    file_glob_pattern.push("*.gpg");
-    let pass_files = glob(&file_glob_pattern.to_string_lossy()).unwrap();
-
-    let base_store_path = state.store_path.to_path_buf();
-
     let mut matches: RVec<Match> = RVec::new();
 
     let mut matcher = Matcher::new(nuConfig::DEFAULT.match_paths());
     let pattern = Pattern::parse(&input, CaseMatching::Ignore, Normalization::Smart);
 
-    let mut all_files: Vec<String> = Vec::new();
-    for entry in pass_files {
-        match entry {
-            Ok(path) => {
-                // Ignore any git files
-                if path.starts_with(Path::join(&base_store_path, ".git")) {
-                    continue;
-                }
-                all_files.push(path.to_string_lossy().into_owned());
-            }
-            Err(e) => println!("{:?}", e),
-        }
-    }
-    let fuzzy_matches: Vec<(String, u32)> = pattern.match_list(all_files, &mut matcher);
+    let fuzzy_matches: Vec<(&String, u32)> = pattern.match_list(&state.pass_files, &mut matcher);
     for fmatch in fuzzy_matches.iter().take(state.config.max_results) {
-        let match_path = Path::new(&fmatch.0);
-        let relative_path = match_path.strip_prefix(&base_store_path).unwrap();
+        let relative_path = Path::new(&fmatch.0);
+        let id = state.pass_files.iter().position(|r| r == fmatch.0);
+        let Some(id) = id else { continue };
 
         let mut title: RString;
         let description: ROption<RString>;
-        if match_path.is_dir() {
+        if relative_path.is_dir() {
             title = RString::from(relative_path.to_string_lossy());
             title.push('/');
             description = ROption::RNone;
@@ -124,17 +121,44 @@ fn get_matches(input: RString, state: &mut State) -> RVec<Match> {
             title: title,
             description: description,
             use_pango: false,
-            id: ROption::RNone,
+            id: ROption::RSome(id.try_into().unwrap()),
             icon: ROption::RNone,
         });
     }
     matches.into()
 }
 
-// fn decrypt_file_with_agent(filepath: Path) -> String {
-// }
+fn shell_out_to_pass(filename: &str) -> Result<String, Error> {
+    let output = Command::new("pass")
+        .arg(filename)
+        .output()?;
+    let output_str = String::from_utf8(output.stdout).unwrap();
+    match output_str.lines().next() {
+        None => return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "No output")),
+        Some(first_line) => return Ok(first_line.to_string()),
+    }
+}
 
 #[handler]
-fn handler(_selection: Match) -> HandleResult {
-    HandleResult::Close
+fn handler(selection: Match, state: &State) -> HandleResult {
+    let ROption::RSome(id) = selection.id else {
+        eprintln!("[pass] Unable to open {}", selection.title);
+        return HandleResult::Close
+    };
+    let id: usize = id as usize;
+    let relative_path = &state.pass_files[id];
+    let secret_name = relative_path.strip_suffix(".gpg").unwrap_or_else(|| { relative_path });
+
+    println!("Opening Secret: {}", secret_name);
+    match shell_out_to_pass(secret_name) {
+        Err(e) => {
+            eprintln!("{}", e);
+            return HandleResult::Close
+        },
+        Ok(password) => {
+            eprintln!("{}", password);
+            return HandleResult::Copy(RVec::from(password.into_bytes()))
+        },
+
+    }
 }
