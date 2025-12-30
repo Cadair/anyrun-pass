@@ -8,18 +8,37 @@
 
   outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } {
     systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
-    perSystem = { pkgs, ... }: {
-      packages.default = pkgs.rustBin.stdenv.mkDerivation {
+    perSystem = { pkgs, ... }: let
+      anyrun-pass = pkgs.rustPlatform.buildRustPackage {
         name = "anyrun-pass";
-        src = ./.;
-        buildInputs = with pkgs; [ rustc cargo ];
-        installPhase = "cargo install --path . --root $out";
+        src = builtins.path {
+          path = inputs.self;
+          name = "anyrun-pass";
+        };
+        cargoLock = {
+          lockFile = ./Cargo.lock;
+          # Temporary while packages aren't yet stabilized
+          allowBuiltinFetchGit = true;
+        };
+        strictDeps = true;
+        copyLibs = true;
+        buildInputs = with pkgs; [ nettle openssl ];
+        nativeBuildInputs = with pkgs; [ pkg-config ];
+
+        CARGO_BUILD_INCREMENTAL = "false";
+        RUST_BACKTRACE = "full";
       };
+    in {
+
+      packages.default = anyrun-pass;
 
       devShells.default = pkgs.mkShell {
-        packages = with pkgs; [ rustc cargo ];
+        packages = with pkgs; [ rustc cargo anyrun ];
         shellHook = ''
           echo "Welcome to the Rust dev shell!"
+          export ANYRUN_PASS_LIB="${anyrun-pass}/lib/libanyrun_pass.so"
+          echo "Library path: $ANYRUN_PASS_LIB"
+          alias anyrun-pass="anyrun --plugins $ANYRUN_PASS_LIB"
         '';
       };
     };
