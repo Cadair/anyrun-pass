@@ -7,11 +7,11 @@ use serde::Deserialize;
 use std::env::var;
 use std::fs;
 use std::path::{Path, PathBuf};
-use sequoia_openpgp as openpgp;
-use openpgp::parse::Parse;
-use openpgp::policy::StandardPolicy;
-use openpgp::serialize::stream::Decryptor;
-use std::io::{self, Read};
+// use sequoia_openpgp as openpgp;
+// use openpgp::parse::Parse;
+// use openpgp::policy::StandardPolicy;
+// use openpgp::serialize::stream::Decryptor;
+// use std::io::{self, Read};
 
 #[derive(Deserialize, Debug)]
 struct Config {
@@ -37,6 +37,7 @@ struct State {
 
 #[init]
 fn init(config_dir: RString) -> State {
+    eprintln!("[pass] Initialized");
     let config = match fs::read_to_string(format!("{config_dir}/pass.ron")) {
         Ok(content) => ron::from_str(&content).unwrap_or_else(|why| {
             eprintln!("[pass] Failed to parse config: {why}");
@@ -130,10 +131,10 @@ fn get_matches(input: RString, state: &mut State) -> RVec<Match> {
     matches.into()
 }
 
-fn decrypt_file_with_agent(filepath: Path) -> String {
-}
+// fn decrypt_file_with_agent(filepath: Path) -> String {
+// }
 
 #[handler]
-fn handler(selection: Match) -> HandleResult {
+fn handler(_selection: Match) -> HandleResult {
     HandleResult::Close
 }
