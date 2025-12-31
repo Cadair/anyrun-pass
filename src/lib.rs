@@ -85,7 +85,7 @@ fn init(config_dir: RString) -> State {
 fn info() -> PluginInfo {
     PluginInfo {
         name: "Pass".into(),
-        icon: "padlock".into(),
+        icon: "dialog-password".into(),
     }
 }
 
